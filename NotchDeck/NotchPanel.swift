@@ -26,7 +26,7 @@ struct NotchMetrics {
         }
     }
 
-    var collapsedSize: CGSize { CGSize(width: notchWidth + 160, height: notchHeight + 4) }
+    var collapsedSize: CGSize { CGSize(width: notchWidth + 160, height: notchHeight + 24) }
 
     var collapsedPanelFrame: NSRect {
         let s = collapsedSize

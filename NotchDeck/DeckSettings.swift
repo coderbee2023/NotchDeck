@@ -69,6 +69,8 @@ final class DeckSettings: ObservableObject {
     @Published var openOnHover: Bool { didSet { d.set(openOnHover, forKey: "openOnHover") } }
     @Published var hoverDelay: Double { didSet { d.set(hoverDelay, forKey: "hoverDelay") } }
     @Published var pillNowPlaying: Bool { didSet { d.set(pillNowPlaying, forKey: "pillNowPlaying") } }
+    @Published var glowBorder: Bool { didSet { d.set(glowBorder, forKey: "glowBorder") } }
+    @Published var glowHex: String { didSet { d.set(glowHex, forKey: "glowHex") } }
     @Published var launchAtLogin: Bool = false
 
     private let d = UserDefaults.standard
@@ -85,6 +87,8 @@ final class DeckSettings: ObservableObject {
         openOnHover = d.object(forKey: "openOnHover") as? Bool ?? true
         hoverDelay = d.object(forKey: "hoverDelay") as? Double ?? 0.0
         pillNowPlaying = d.object(forKey: "pillNowPlaying") as? Bool ?? true
+        glowBorder = d.object(forKey: "glowBorder") as? Bool ?? true
+        glowHex = d.string(forKey: "glowHex") ?? ""
         if let raw = d.stringArray(forKey: "widgets") {
             widgets = raw.compactMap(SystemWidget.init(rawValue:))
         } else {
@@ -103,6 +107,11 @@ final class DeckSettings: ObservableObject {
             NSLog("Launch at login failed: \(error)")
         }
         refreshLaunchAtLogin()
+    }
+
+    var glowColor: Color {
+        if glowHex.isEmpty { return accent }
+        return Color(nsColor: NSColor(hex: glowHex) ?? accentNSColor)
     }
 
     var accentNSColor: NSColor { NSColor(hex: accentHex) ?? .white }
@@ -145,6 +154,8 @@ final class DeckSettings: ObservableObject {
         openOnHover = true
         hoverDelay = 0
         pillNowPlaying = true
+        glowBorder = true
+        glowHex = ""
     }
 }
 

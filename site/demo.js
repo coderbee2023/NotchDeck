@@ -59,7 +59,7 @@
   var S = {
     open: false, pinned: false, page: 0, active: 3, playing: true, pos: 92, dur: 206, vol: 82, shuffle: false, repeat: 0,
     accent: '#3DDC84', glass: 0.11, tint: 0, vis: true, volbar: true, glow: true, pill: true, login: false, hover: true, delay: 0,
-    widgets: ['clock', 'battery', 'cpu', 'memory', 'disk', 'network', 'thermal', 'top'], actions: true, sysvol: true, sysVolume: 0.5, muted: false, awake: false,
+    widgets: ['clock', 'battery', 'cpu', 'memory', 'disk', 'network', 'thermal', 'top'], glowOn: true, glowHex: '', actions: true, sysvol: true, sysVolume: 0.5, muted: false, awake: false,
     cpu: 0.13, mem: 0.69, disk: 0.66, batt: 1.0, down: 0, up: 0
   };
 
@@ -89,6 +89,8 @@
     root.style.setProperty('--nd-tint', accentRGBA(S.tint * 0.35));
     root.style.setProperty('--nd-accent-22', accentRGBA(0.22));
     root.style.setProperty('--nd-accent-80', accentRGBA(0.8));
+    root.style.setProperty('--nd-glow', S.glowHex || S.accent);
+    deck.classList.toggle('glow', S.glowOn);
   }
 
   /* ---------- header ---------- */
@@ -180,6 +182,8 @@
       '<div class="nd-swatches">' + PRESETS.map(function (p) { return '<button class="nd-sw' + (S.accent === p ? ' on' : '') + '" data-sw="' + p + '" style="background:' + p + '"></button>'; }).join('') + '</div>' +
       '<div class="nd-hue" data-slider="hue">' + (hue !== null ? '<i style="left:' + (hue * 100) + '%"></i>' : '') + '</div>' +
       lslider('Glass', 'sun', (S.glass - 0.04) / 0.26, 'glass') + lslider('Tint', 'drop', S.tint, 'tint') +
+      '<div class="nd-glowrow">' + chip('Glow', 'sparkles', S.glowOn, 'glowOn') + '<div class="nd-minisw' + (S.glowOn ? '' : ' off') + '"><button class="nd-msw' + (S.glowHex === '' ? ' on' : '') + '" data-glow="" style="background:' + S.accent + '" title="Match accent"></button>' +
+      PRESETS.slice(1).map(function (p) { return '<button class="nd-msw' + (S.glowHex === p ? ' on' : '') + '" data-glow="' + p + '" style="background:' + p + '"></button>'; }).join('') + '</div></div>' +
       '<div class="nd-flex"></div><button class="nd-reset" data-act="reset">Reset to defaults</button></div>' +
       '<div class="nd-tile nd-st"><div class="nd-sh"><i>' + I.sliders + '</i><b>General</b></div>' +
       chip('Launch at login', 'power', S.login, 'login') + chip('Open on hover', 'cursor', S.hover, 'hover') + lslider('Delay', 'timer', S.delay, 'delay') +
@@ -278,8 +282,9 @@
 
   /* ---------- clicks ---------- */
   body.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-page],[data-space],[data-act],[data-chip],[data-sw],[data-q],[data-mute]');
+    var t = e.target.closest('[data-page],[data-space],[data-act],[data-chip],[data-sw],[data-q],[data-mute],[data-glow]');
     if (!t) return;
+    if (t.dataset.glow !== undefined) { S.glowHex = t.dataset.glow; renderAll(); return; }
     if (t.dataset.page !== undefined) { S.page = +t.dataset.page; renderBody(); return; }
     if (t.dataset.space !== undefined) { S.active = +t.dataset.space; renderAll(); return; }
     if (t.dataset.sw) { S.accent = t.dataset.sw; renderAll(); return; }
@@ -297,7 +302,7 @@
     if (a === 'prev') { S.pos = 0; renderBody(); }
     if (a === 'shuffle') { S.shuffle = !S.shuffle; renderBody(); }
     if (a === 'repeat') { S.repeat = (S.repeat + 1) % 3; renderBody(); }
-    if (a === 'reset') { S.accent = '#FFFFFF'; S.glass = 0.11; S.tint = 0; S.vis = S.volbar = S.glow = S.pill = S.actions = S.sysvol = S.hover = true; S.delay = 0; S.widgets = ['clock', 'battery', 'cpu', 'memory', 'disk', 'network', 'thermal', 'top']; renderAll(); }
+    if (a === 'reset') { S.glowOn = true; S.glowHex = ''; S.accent = '#FFFFFF'; S.glass = 0.11; S.tint = 0; S.vis = S.volbar = S.glow = S.pill = S.actions = S.sysvol = S.hover = true; S.delay = 0; S.widgets = ['clock', 'battery', 'cpu', 'memory', 'disk', 'network', 'thermal', 'top']; renderAll(); }
   });
 
   /* ---------- sliders / drag ---------- */

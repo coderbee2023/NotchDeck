@@ -44,6 +44,20 @@ struct DeckView: View {
                 )
                 .frame(width: width, height: height)
 
+            if settings.glowBorder {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+                    let t = tl.date.timeIntervalSinceReferenceDate
+                    let p = 0.5 + 0.5 * (sin(t * 2.4) * 0.5 + 0.5)
+                    let c = settings.glowColor
+                    NotchOutline(bottomRadius: expanded ? 30 : (pill ? 14 : 10), topFlare: flare)
+                        .stroke(c.opacity(0.55 + 0.45 * p), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+                        .shadow(color: c.opacity(0.85 * p + 0.1), radius: 5)
+                        .shadow(color: c.opacity(0.55 * p), radius: 14)
+                        .frame(width: width, height: height)
+                }
+                .allowsHitTesting(false)
+            }
+
             if pill {
                 HStack(spacing: 0) {
                     pillArtwork
@@ -205,6 +219,31 @@ struct NotchShape: InsettableShape {
         p.addQuadCurve(to: CGPoint(x: rect.maxX + f, y: rect.minY),
                        control: CGPoint(x: rect.maxX, y: rect.minY))
         p.closeSubpath()
+        return p
+    }
+}
+
+struct NotchOutline: Shape {
+    var bottomRadius: CGFloat
+    var topFlare: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(bottomRadius, topFlare) }
+        set { bottomRadius = newValue.first; topFlare = newValue.second }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let r = min(bottomRadius, rect.height / 2)
+        let f = topFlare
+        p.move(to: CGPoint(x: rect.minX - f, y: rect.minY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.minY + f), control: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - r))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.maxY), control: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY - r), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + f))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX + f, y: rect.minY), control: CGPoint(x: rect.maxX, y: rect.minY))
         return p
     }
 }
@@ -669,32 +708,25 @@ struct Visualizer: View {
     var color: Color = .white
     var barCount: Int = 6
     var maxHeight: CGFloat = 16
-    @State private var phase = 0.0
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(color.opacity(active ? 0.9 : 0.3))
-                    .frame(width: 3, height: height(for: i))
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !active)) { tl in
+            let phase = tl.date.timeIntervalSinceReferenceDate * (2 * .pi / 0.9)
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(0..<barCount, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(color.opacity(active ? 0.9 : 0.3))
+                        .frame(width: 3, height: height(for: i, phase: phase))
+                }
             }
+            .frame(height: maxHeight, alignment: .bottom)
         }
-        .frame(height: maxHeight, alignment: .bottom)
-        .onAppear { animate() }
-        .onChange(of: active) { _, _ in animate() }
     }
 
-    private func height(for i: Int) -> CGFloat {
+    private func height(for i: Int, phase: Double) -> CGFloat {
         guard active else { return 3 }
         let v = sin(phase + Double(i) * 1.3) * 0.5 + 0.5
         return 3 + CGFloat(v) * (maxHeight - 3)
-    }
-
-    private func animate() {
-        guard active else { return }
-        withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-            phase = .pi * 2
-        }
     }
 }
 
@@ -1116,7 +1148,7 @@ struct SettingsPage: View {
     var body: some View {
         HStack(spacing: 10) {
             Tile(padding: 12) {
-                VStack(alignment: .leading, spacing: 9) {
+                VStack(alignment: .leading, spacing: 7) {
                     SectionHeader(title: "Appearance", symbol: "paintpalette.fill")
                     Text("Accent")
                         .font(.system(size: 10, weight: .semibold))
@@ -1130,6 +1162,31 @@ struct SettingsPage: View {
                         .frame(height: 14)
                     LabeledSlider(title: "Glass", icon: "sun.max.fill", value: (settings.glass - 0.04) / 0.26) { settings.glass = 0.04 + $0 * 0.26 }
                     LabeledSlider(title: "Tint", icon: "drop.fill", value: settings.tint) { settings.tint = $0 }
+                    HStack(spacing: 6) {
+                        Chip(title: "Glow", symbol: "sparkle", on: settings.glowBorder) { settings.glowBorder.toggle() }
+                            .frame(width: 66)
+                        HStack(spacing: 5) {
+                            Button { settings.glowHex = "" } label: {
+                                ZStack {
+                                    Circle().fill(settings.accent)
+                                    Image(systemName: "paintbrush.pointed.fill").font(.system(size: 7, weight: .bold)).foregroundStyle(settings.onAccent)
+                                }
+                                .frame(width: 16, height: 16)
+                                .overlay(Circle().strokeBorder(Color.white.opacity(settings.glowHex.isEmpty ? 1 : 0.2), lineWidth: settings.glowHex.isEmpty ? 2 : 1))
+                            }
+                            .buttonStyle(.plain)
+                            ForEach(ThemePreset.allCases.filter { $0 != .mono }) { p in
+                                Button { settings.glowHex = p.hex } label: {
+                                    Circle()
+                                        .fill(Color(nsColor: NSColor(hex: p.hex) ?? .white))
+                                        .frame(width: 16, height: 16)
+                                        .overlay(Circle().strokeBorder(Color.white.opacity(settings.glowHex == p.hex ? 1 : 0.2), lineWidth: settings.glowHex == p.hex ? 2 : 1))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .opacity(settings.glowBorder ? 1 : 0.35)
+                    }
                     Spacer(minLength: 0)
                     Button { settings.reset() } label: {
                         Text("Reset to defaults")
