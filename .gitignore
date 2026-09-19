@@ -1,0 +1,12 @@
+build/
+dist/
+*.log
+.notchdeck-*
+shot-*.png
+sctest.swift
+*.xcuserstate
+xcuserdata/
+.DS_Store
+site/.vercel/
+relaunch.sh
+build-debug.sh
