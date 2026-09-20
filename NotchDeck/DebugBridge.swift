@@ -84,6 +84,25 @@ final class DebugBridge {
             panels.primary?.expand(pinned: true)
         case "collapse":
             panels.primary?.collapse()
+        case "glow":
+            if parts.count > 1 { state.settings.glowMode = parts[1] }
+            log("glowMode=\(state.settings.glowMode) album=\(String(describing: state.glowSource.albumColor)) wallpaper=\(String(describing: state.glowSource.wallpaperColor))")
+        case "charge":
+            state.chargePing += 1
+            log("charge ping")
+        case "shelfadd":
+            let path = String(command.dropFirst(9)).trimmingCharacters(in: .whitespaces)
+            state.shelf.add(urls: [URL(fileURLWithPath: path)])
+            log("shelf add -> \(state.shelf.items.map(\.name))")
+        case "shelf":
+            log("shelf: \(state.shelf.items.map(\.name))")
+        case "timer":
+            let mins = parts.count > 1 ? (Double(parts[1]) ?? 1) : 1
+            state.timer.set(minutes: mins)
+            state.timer.start()
+            log("timer started \(state.timer.display)")
+        case "stoptimer":
+            state.timer.reset()
         case "page":
             if parts.count > 1, let p = Int(parts[1]) { panels.primary?.ui.page = p }
         case "music":

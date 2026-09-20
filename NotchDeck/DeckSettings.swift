@@ -3,13 +3,14 @@ import AppKit
 import ServiceManagement
 
 enum SystemWidget: String, CaseIterable, Identifiable {
-    case clock, battery, cpu, memory, disk, network, thermal, topProcess, uptime
+    case clock, weather, battery, cpu, memory, disk, network, thermal, topProcess, uptime
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .clock: return "Clock"
+        case .weather: return "Weather"
         case .battery: return "Battery"
         case .cpu: return "CPU"
         case .memory: return "Memory"
@@ -24,6 +25,7 @@ enum SystemWidget: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .clock: return "clock.fill"
+        case .weather: return "cloud.sun.fill"
         case .battery: return "battery.75percent"
         case .cpu: return "cpu.fill"
         case .memory: return "memorychip.fill"
@@ -55,7 +57,7 @@ enum ThemePreset: String, CaseIterable, Identifiable {
 }
 
 final class DeckSettings: ObservableObject {
-    static let defaultWidgets: [SystemWidget] = [.clock, .battery, .cpu, .memory, .disk, .network, .thermal, .topProcess]
+    static let defaultWidgets: [SystemWidget] = [.clock, .weather, .battery, .cpu, .memory, .disk, .network, .thermal]
 
     @Published var accentHex: String { didSet { d.set(accentHex, forKey: "accentHex") } }
     @Published var glass: Double { didSet { d.set(glass, forKey: "glass") } }
@@ -71,6 +73,24 @@ final class DeckSettings: ObservableObject {
     @Published var pillNowPlaying: Bool { didSet { d.set(pillNowPlaying, forKey: "pillNowPlaying") } }
     @Published var glowBorder: Bool { didSet { d.set(glowBorder, forKey: "glowBorder") } }
     @Published var glowHex: String { didSet { d.set(glowHex, forKey: "glowHex") } }
+    @Published var waveWithMusic: Bool { didSet { d.set(waveWithMusic, forKey: "waveWithMusic") } }
+    @Published var waveIntensity: Double { didSet { d.set(waveIntensity, forKey: "waveIntensity") } }
+    @Published var showFace: Bool { didSet { d.set(showFace, forKey: "showFace") } }
+    @Published var faceMode: String { didSet { d.set(faceMode, forKey: "faceMode") } }
+    @Published var eventFaces: Bool { didSet { d.set(eventFaces, forKey: "eventFaces") } }
+    @Published var clickActions: Bool { didSet { d.set(clickActions, forKey: "clickActions") } }
+    @Published var scrollVolume: Bool { didSet { d.set(scrollVolume, forKey: "scrollVolume") } }
+    @Published var showLyrics: Bool { didSet { d.set(showLyrics, forKey: "showLyrics") } }
+    @Published var lyricsUnderNotch: Bool { didSet { d.set(lyricsUnderNotch, forKey: "lyricsUnderNotch") } }
+    @Published var weatherOn: Bool { didSet { d.set(weatherOn, forKey: "weatherOn") } }
+    @Published var weatherCity: String { didSet { d.set(weatherCity, forKey: "weatherCity") } }
+    @Published var weatherUseLocation: Bool { didSet { d.set(weatherUseLocation, forKey: "weatherUseLocation") } }
+    @Published var fahrenheit: Bool { didSet { d.set(fahrenheit, forKey: "fahrenheit") } }
+    @Published var weatherFace: Bool { didSet { d.set(weatherFace, forKey: "weatherFace") } }
+    @Published var glowMode: String { didSet { d.set(glowMode, forKey: "glowMode") } }
+    @Published var focusIndicator: Bool { didSet { d.set(focusIndicator, forKey: "focusIndicator") } }
+    @Published var chargeAnimation: Bool { didSet { d.set(chargeAnimation, forKey: "chargeAnimation") } }
+    @Published var sounds: Bool { didSet { d.set(sounds, forKey: "sounds") } }
     @Published var launchAtLogin: Bool = false
 
     private let d = UserDefaults.standard
@@ -85,14 +105,46 @@ final class DeckSettings: ObservableObject {
         showQuickActions = d.object(forKey: "showQuickActions") as? Bool ?? true
         showSystemVolume = d.object(forKey: "showSystemVolume") as? Bool ?? true
         openOnHover = d.object(forKey: "openOnHover") as? Bool ?? true
-        hoverDelay = d.object(forKey: "hoverDelay") as? Double ?? 0.0
+        hoverDelay = d.object(forKey: "hoverDelay") as? Double ?? 0.35
         pillNowPlaying = d.object(forKey: "pillNowPlaying") as? Bool ?? true
         glowBorder = d.object(forKey: "glowBorder") as? Bool ?? true
         glowHex = d.string(forKey: "glowHex") ?? ""
+        waveWithMusic = d.object(forKey: "waveWithMusic") as? Bool ?? true
+        waveIntensity = d.object(forKey: "waveIntensity") as? Double ?? 0.6
+        showFace = d.object(forKey: "showFace") as? Bool ?? true
+        faceMode = d.string(forKey: "faceMode") ?? "auto"
+        eventFaces = d.object(forKey: "eventFaces") as? Bool ?? true
+        clickActions = d.object(forKey: "clickActions") as? Bool ?? true
+        scrollVolume = d.object(forKey: "scrollVolume") as? Bool ?? true
+        showLyrics = d.object(forKey: "showLyrics") as? Bool ?? true
+        lyricsUnderNotch = d.object(forKey: "lyricsUnderNotch") as? Bool ?? false
+        weatherOn = d.object(forKey: "weatherOn") as? Bool ?? true
+        weatherCity = d.string(forKey: "weatherCity") ?? ""
+        weatherUseLocation = d.object(forKey: "weatherUseLocation") as? Bool ?? true
+        fahrenheit = d.object(forKey: "fahrenheit") as? Bool ?? (Locale.current.measurementSystem == .us)
+        weatherFace = d.object(forKey: "weatherFace") as? Bool ?? true
+        glowMode = d.string(forKey: "glowMode") ?? (d.string(forKey: "glowHex").map { $0.isEmpty ? "accent" : "custom" } ?? "accent")
+        focusIndicator = d.object(forKey: "focusIndicator") as? Bool ?? true
+        chargeAnimation = d.object(forKey: "chargeAnimation") as? Bool ?? true
+        sounds = d.object(forKey: "sounds") as? Bool ?? false
         if let raw = d.stringArray(forKey: "widgets") {
             widgets = raw.compactMap(SystemWidget.init(rawValue:))
         } else {
             widgets = DeckSettings.defaultWidgets
+        }
+        if !d.bool(forKey: "weatherWidgetMigrated") {
+            if !widgets.contains(.weather) {
+                var next = widgets
+                next.insert(.weather, at: min(1, next.count))
+                widgets = next
+                d.set(next.map(\.rawValue), forKey: "widgets")
+            }
+            d.set(true, forKey: "weatherWidgetMigrated")
+        }
+        if !d.bool(forKey: "hoverDelayMigrated") {
+            hoverDelay = max(hoverDelay, 0.35)
+            d.set(hoverDelay, forKey: "hoverDelay")
+            d.set(true, forKey: "hoverDelayMigrated")
         }
     }
 
@@ -109,9 +161,12 @@ final class DeckSettings: ObservableObject {
         refreshLaunchAtLogin()
     }
 
+    var mode: GlowMode { GlowMode(rawValue: glowMode) ?? .accent }
+
+    /// The static part of the glow: dynamic modes are resolved against live art in DeckState.
     var glowColor: Color {
-        if glowHex.isEmpty { return accent }
-        return Color(nsColor: NSColor(hex: glowHex) ?? accentNSColor)
+        if mode == .custom, !glowHex.isEmpty { return Color(nsColor: NSColor(hex: glowHex) ?? accentNSColor) }
+        return accent
     }
 
     var accentNSColor: NSColor { NSColor(hex: accentHex) ?? .white }
@@ -156,6 +211,22 @@ final class DeckSettings: ObservableObject {
         pillNowPlaying = true
         glowBorder = true
         glowHex = ""
+        waveWithMusic = true
+        waveIntensity = 0.6
+        showFace = true
+        faceMode = "auto"
+        eventFaces = true
+        clickActions = true
+        scrollVolume = true
+        showLyrics = true
+        weatherOn = true
+        weatherUseLocation = true
+        weatherFace = true
+        glowMode = "accent"
+        focusIndicator = true
+        chargeAnimation = true
+        sounds = false
+        hoverDelay = 0.35
     }
 }
 

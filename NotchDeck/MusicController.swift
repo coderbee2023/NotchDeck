@@ -58,6 +58,13 @@ final class MusicController: ObservableObject {
     private var lastPoll = Date()
     private var volumeHold = Date.distantPast
 
+    var livePosition: Double {
+        guard let np = nowPlaying else { return 0 }
+        guard np.isPlaying else { return localPosition }
+        return min(np.duration > 0 ? np.duration : .greatestFiniteMagnitude,
+                   localPosition + Date().timeIntervalSince(lastPoll))
+    }
+
     func start() {
         poll()
         restartTimer()
@@ -112,6 +119,8 @@ final class MusicController: ObservableObject {
                             volume: Int(parts[9].replacingOccurrences(of: ",", with: ".").split(separator: ".").first ?? "0") ?? 0)
         var np2 = np
         if Date() < volumeHold, let cur = nowPlaying { np2.volume = cur.volume }
+        lastPoll = Date()
+        localPosition = np.position
         if np2 != nowPlaying { nowPlaying = np2 }
         if np.trackKey != artworkKey {
             artworkKey = np.trackKey

@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>NotchDeck watches for new screenshots on your Desktop so the little face can react to them. Files are never read or sent anywhere.</string>
+	<key>NSFocusStatusUsageDescription</key>
+	<string>NotchDeck shows a small moon in the notch while a Focus is on. Nothing about your Focus leaves your Mac.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>NotchDeck uses your location once to show local weather in the notch. Nothing is stored or sent anywhere except the weather request.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

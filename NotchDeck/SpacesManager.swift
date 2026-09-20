@@ -12,6 +12,9 @@ private func CGSCopyManagedDisplaySpaces(_ cid: Int32) -> Unmanaged<CFArray>
 @_silgen_name("CGSGetActiveSpace")
 private func CGSGetActiveSpace(_ cid: Int32) -> UInt64
 
+@_silgen_name("CGSManagedDisplaySetCurrentSpace")
+private func CGSManagedDisplaySetCurrentSpace(_ cid: Int32, _ display: CFString, _ space: UInt64)
+
 @_silgen_name("CGSCopySpacesForWindows")
 private func CGSCopySpacesForWindows(_ cid: Int32, _ mask: Int32, _ windowIDs: CFArray) -> Unmanaged<CFArray>
 
@@ -80,6 +83,17 @@ final class SpacesManager: ObservableObject {
     static var debugLog: ((String) -> Void)?
 
     private let cid = CGSMainConnectionID()
+    // Stable left-to-right order of the tiles, keyed by space id. macOS reshuffles its own
+    // Space order on use ("Automatically rearrange Spaces based on most recent use"); we keep
+    // the deck's tiles put by remembering the first order we saw and appending new spaces at
+    // the end. The per-space `desktopNumber` still tracks the live Mission Control position,
+    // so Ctrl+N goes to the right desktop regardless of where its tile sits.
+    private var spaceOrder: [UInt64] = []
+    // Space ids we hold a REAL screenshot for — captured by `captureActiveSpace` while the
+    // space was actually on screen. The reconstructed composite (`captureAllSpaces`) must
+    // never overwrite these, otherwise a good thumbnail from your last visit gets clobbered
+    // by a worse, stale reconstruction (the "it reverts to the initial image" bug).
+    private var realThumbnailIDs: Set<UInt64> = []
     private var observers: [NSObjectProtocol] = []
     private var captureInFlight = false
     private var captureTimer: Timer?
@@ -87,7 +101,13 @@ final class SpacesManager: ObservableObject {
     private var compositeTimer: Timer?
     var isDeckOpen = false {
         didSet {
-            if isDeckOpen && !oldValue { captureAllSpaces() }
+            guard isDeckOpen, !oldValue else { return }
+            captureActiveSpace()
+            captureAllSpaces()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { [weak self] in
+                guard let self, self.isDeckOpen else { return }
+                self.captureAllSpaces()
+            }
         }
     }
     private let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -106,7 +126,7 @@ final class SpacesManager: ObservableObject {
             self?.captureActiveSpace()
         }
         RunLoop.main.add(captureTimer!, forMode: .common)
-        compositeTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        compositeTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             guard let self, self.isDeckOpen else { return }
             self.captureAllSpaces()
         }
@@ -125,9 +145,14 @@ final class SpacesManager: ObservableObject {
         guard !compositeInFlight, CGPreflightScreenCaptureAccess() else { return }
         compositeInFlight = true
         refresh()
+        // Forget real-screenshot marks for spaces that no longer exist, then snapshot the set:
+        // any space we already have a live screenshot of is left untouched by the composite.
+        let presentIDs = Set(currentDisplays.flatMap { $0.spaces.map(\.id) })
+        realThumbnailIDs.formIntersection(presentIDs)
+        let realIDs = realThumbnailIDs
         var jobs: [(displayID: CGDirectDisplayID, wallpaper: NSImage?, targets: [SpaceInfo])] = []
         for d in currentDisplays {
-            let targets = d.spaces.filter { $0.id != d.activeSpaceID }
+            let targets = d.spaces.filter { $0.id != d.activeSpaceID && !realIDs.contains($0.id) }
             let screen = NSScreen.screens.first { SpacesManager.uuid(for: $0) == d.uuid } ?? NotchPanel.preferredScreen()
             let wallpaper = NSWorkspace.shared.desktopImageURL(for: screen).flatMap { NSImage(contentsOf: $0) }
             jobs.append((d.displayID, wallpaper, targets))
@@ -164,6 +189,11 @@ final class SpacesManager: ObservableObject {
                                                   height: f.height * scale)
                                 layers.append((img, rect))
                             }
+                        }
+                        if layers.isEmpty, !space.windows.isEmpty {
+                            let sid = space.id
+                            let hasExisting = await MainActor.run { self?.thumbnails[sid] != nil }
+                            if hasExisting { continue }
                         }
                         guard let composed = SpacesManager.compose(width: canvasW, height: canvasH, wallpaper: job.wallpaper, layers: layers) else { continue }
                         let image = NSImage(cgImage: composed, size: NSSize(width: canvasW, height: canvasH))
@@ -256,6 +286,16 @@ final class SpacesManager: ObservableObject {
 
         var all = built.flatMap(\.spaces)
         attachWindows(to: &all)
+
+        // Keep tile positions stable across macOS's own reshuffling: drop ids that vanished,
+        // append freshly-created ones in their current order, then sort everything by this
+        // remembered order.
+        let presentIDs = all.map(\.id)
+        spaceOrder.removeAll { !presentIDs.contains($0) }
+        for id in presentIDs where !spaceOrder.contains(id) { spaceOrder.append(id) }
+        let orderIndex = Dictionary(spaceOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        all.sort { (orderIndex[$0.id] ?? .max) < (orderIndex[$1.id] ?? .max) }
+
         for i in built.indices {
             built[i].spaces = all.filter { $0.displayUUID == built[i].uuid }
         }
@@ -314,7 +354,9 @@ final class SpacesManager: ObservableObject {
             let bounds = w[kCGWindowBounds as String] as? [String: CGFloat] ?? [:]
             if (bounds["Width"] ?? 0) < 80 || (bounds["Height"] ?? 0) < 60 { continue }
             let ids = CGSCopySpacesForWindows(cid, 0x7, [wid] as CFArray).takeRetainedValue() as NSArray
-            if ids.count != 1 { continue }
+            guard ids.count > 0 else { continue }
+            // A window can legitimately belong to several spaces (assigned to all desktops,
+            // or shown on every display). Dropping those left busy desktops looking empty.
             for case let sid as NSNumber in ids {
                 bySpace[sid.uint64Value, default: []].append(SpaceWindow(id: CGWindowID(wid), pid: pid_t(pid)))
             }
@@ -329,103 +371,98 @@ final class SpacesManager: ObservableObject {
     func switchTo(_ space: SpaceInfo) {
         refresh()
         let current = activeSpace(of: space)
-        SpacesManager.debugLog?("switchTo \(space.title) id=\(space.id) active=\(current) ax=\(AXIsProcessTrusted())")
+        let leavingFullscreen = currentDisplays.first { $0.uuid == space.displayUUID }?
+            .spaces.first { $0.id == current }?.isFullscreen ?? false
+        SpacesManager.debugLog?("switchTo \(space.title) id=\(space.id) active=\(current) fs=\(space.isFullscreen) leavingFS=\(leavingFullscreen)")
         guard space.id != current else { return }
-
-        guard AXIsProcessTrusted() else {
-            lastSwitch = .none
-            SpacesManager.debugLog?("no Accessibility -> prompting, not switching")
-            Permissions.requestAccessibilityIfNeeded()
-            return
-        }
-
-        if space.isFullscreen, let win = space.windows.first {
-            let raised = jumpToFullscreenWindow(in: space)
-            if !raised { NSRunningApplication(processIdentifier: win.pid)?.activate() }
-            lastSwitch = .hotkey
-            SpacesManager.debugLog?("full-screen jump via \(raised ? "AXRaise" : "activate")")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
-                guard let self else { return }
-                let ok = self.isNowActive(space)
-                SpacesManager.debugLog?("after=\(self.activeSpace(of: space)) ok=\(ok)")
-                if !ok { self.switchByArrows(to: space) }
-            }
-            return
-        }
-
-        if isOnMainDisplay(space), let n = space.desktopNumber, n >= 1, n <= 9, DesktopHotkeys.isEnabled(n) {
-            lastSwitch = .hotkey
-            SpacesManager.debugLog?("ctrl+\(n) direct")
-            KeyPoster.postControlDigit(n)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                guard let self else { return }
-                let ok = self.isNowActive(space)
-                SpacesManager.debugLog?("after=\(self.activeSpace(of: space)) ok=\(ok)")
-            }
-            return
-        }
-
-        switchByArrows(to: space)
-    }
-
-    private func isOnMainDisplay(_ space: SpaceInfo) -> Bool {
-        if currentDisplays.count <= 1 || space.displayUUID == "Main" { return true }
-        guard let main = NSScreen.screens.first else { return true }
-        return SpacesManager.uuid(for: main) == space.displayUUID
-    }
-
-    private func ensureCursor(onDisplayOf space: SpaceInfo) {
-        guard let screen = NSScreen.screens.first(where: { SpacesManager.uuid(for: $0) == space.displayUUID }),
-              let primary = NSScreen.screens.first else { return }
-        if screen.frame.contains(NSEvent.mouseLocation) { return }
-        let target = CGPoint(x: screen.frame.midX, y: primary.frame.maxY - screen.frame.midY)
-        CGWarpMouseCursorPosition(target)
-        CGAssociateMouseAndMouseCursorPosition(1)
-        SpacesManager.debugLog?("cursor moved to display \(screen.localizedName)")
-    }
-
-    private func switchByArrows(to space: SpaceInfo) {
-        ensureCursor(onDisplayOf: space)
-        let current = activeSpace(of: space)
-        let list = currentDisplays.first { $0.uuid == space.displayUUID }?.spaces ?? spaces
-        guard let from = list.firstIndex(where: { $0.id == current }),
-              let to = list.firstIndex(where: { $0.id == space.id }) else {
-            SpacesManager.debugLog?("index lookup failed")
-            return
-        }
-        let delta = to - from
-        guard delta != 0 else { return }
-        let goRight = delta > 0
-        let steps = abs(delta)
         lastSwitch = .hotkey
-        SpacesManager.debugLog?("ctrl+\(goRight ? "right" : "left") x\(steps) (\(from) -> \(to))")
-        for i in 0..<steps {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.25) {
-                KeyPoster.postControlArrow(right: goRight)
-            }
+
+        if space.isFullscreen {
+            // Full-screen → pin its exact space id, then activate its app to composite it in.
+            // The pin is the only thing that tells two full-screen windows of the same app apart.
+            jumpToFullscreen(to: space)
+            return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9 + Double(steps) * 0.25) { [weak self] in
-            guard let self else { return }
-            let ok = self.isNowActive(space)
-            SpacesManager.debugLog?("after=\(self.activeSpace(of: space)) ok=\(ok)")
+
+        guard let n = space.desktopNumber, n >= 1, n <= 9 else { return }
+
+        // Leaving a full-screen space straight onto an EMPTY desktop leaves the WindowServer
+        // showing the space we came from — the empty desktop has nothing of its own to paint.
+        // (A desktop that has real app windows paints itself and is fine, so we skip the bounce
+        // there.) A desktop→desktop jump always repaints cleanly, so for the empty case we hop
+        // through another desktop first. Costs one brief blur-through, only in this exact case.
+        if leavingFullscreen, !desktopHasOwnWindow(space),
+           let hop = intermediateDesktopNumber(avoiding: space), hop != n {
+            // Fire the second jump while the first is still animating so macOS blurs straight
+            // through the intermediate desktop. postControlDigit itself takes ~60ms to emit,
+            // so the gap has to clear that plus a margin or the second press is dropped mid-jump.
+            SpacesManager.debugLog?("leaving fullscreen via ctrl+\(hop) -> ctrl+\(n)")
+            KeyPoster.postControlDigit(hop)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                KeyPoster.postControlDigit(n)
+            }
+        } else {
+            SpacesManager.debugLog?("switch via ctrl+\(n)")
+            KeyPoster.postControlDigit(n)
         }
     }
 
-    private func jumpToFullscreenWindow(in space: SpaceInfo) -> Bool {
-        for win in space.windows {
-            let appElement = AXUIElementCreateApplication(win.pid)
-            var value: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &value) == .success,
-                  let axWindows = value as? [AXUIElement] else { continue }
-            for axWindow in axWindows {
-                var wid: CGWindowID = 0
-                guard _AXUIElementGetWindow(axWindow, &wid) == .success, wid == win.id else { continue }
-                AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-                NSRunningApplication(processIdentifier: win.pid)?.activate()
-                return true
-            }
+    /// Whether a desktop paints itself when reached from a full-screen space. True when it has
+    /// a real (.regular) app window that lives on this desktop alone — that window is the
+    /// desktop's own content and renders it. A window pinned to every desktop doesn't count
+    /// (it isn't drawn as this desktop's content), and a bare desktop has nothing; those need
+    /// the bounce to render, everything else does not.
+    private func desktopHasOwnWindow(_ space: SpaceInfo) -> Bool {
+        let desktops = (currentDisplays.first { $0.uuid == space.displayUUID }?.spaces ?? [])
+            .filter { !$0.isFullscreen }
+        var spacesPerWindow: [CGWindowID: Int] = [:]
+        for d in desktops { for w in d.windows { spacesPerWindow[w.id, default: 0] += 1 } }
+        return space.windows.contains { w in
+            spacesPerWindow[w.id] == 1 && w.pid != ownPID &&
+            NSRunningApplication(processIdentifier: w.pid)?.activationPolicy == .regular
         }
-        return false
+    }
+
+    /// Desktop number to bounce through when leaving a full-screen space — prefer a populated
+    /// desktop (one with a real app window) so the intermediate frame itself looks right, else
+    /// any other desktop. Returns nil when there is no other desktop to use.
+    private func intermediateDesktopNumber(avoiding target: SpaceInfo) -> Int? {
+        let desktops = (currentDisplays.first { $0.uuid == target.displayUUID }?.spaces ?? [])
+            .filter { !$0.isFullscreen && $0.id != target.id }
+        let populated = desktops.first { d in
+            d.windows.contains { $0.pid != ownPID && NSRunningApplication(processIdentifier: $0.pid)?.activationPolicy == .regular }
+        }
+        if let n = (populated ?? desktops.first)?.desktopNumber, n >= 1, n <= 9 { return n }
+        return nil
+    }
+
+    /// Reach a specific full-screen space. `CGSManagedDisplaySetCurrentSpace` pins the exact
+    /// space — the only way to tell two full-screen windows of the same app apart — and then
+    /// activating the app brings its window for this space forward so it composites cleanly
+    /// (the pin on its own leaves the previous space's window overlaid on top).
+    private func jumpToFullscreen(to space: SpaceInfo) {
+        let ident = currentDisplays.first { $0.uuid == space.displayUUID }?.uuid ?? space.displayUUID
+        SpacesManager.debugLog?("fullscreen jump id=\(space.id) display=\(ident)")
+        CGSManagedDisplaySetCurrentSpace(cid, ident as CFString, space.id)
+        guard let win = space.windows.first else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.activate(pid: win.pid)
+        }
+    }
+
+    /// Bring an app forward reliably. NotchDeck is an accessory (LSUIElement) app, and
+    /// `NSRunningApplication.activate()` from an accessory is merely advisory — macOS often
+    /// defers it, so the space never changes. Re-opening the bundle with `activates: true`
+    /// is the forceful nudge that actually pulls the app (and its space) to the front; it is
+    /// the same lever the full-screen path relies on.
+    private func activate(pid: pid_t) {
+        guard let app = NSRunningApplication(processIdentifier: pid) else { return }
+        app.activate()
+        guard let url = app.bundleURL else { return }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        config.createsNewApplicationInstance = false
+        NSWorkspace.shared.openApplication(at: url, configuration: config)
     }
 
     // MARK: - Thumbnails
@@ -455,6 +492,7 @@ final class SpacesManager: ObservableObject {
                     let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
                     DispatchQueue.main.async {
                         self?.thumbnails[spaceID] = image
+                        self?.realThumbnailIDs.insert(spaceID)
                     }
                 }
             } catch {
@@ -527,6 +565,26 @@ enum KeyPoster {
         up.post(tap: .cgSessionEventTap)
         usleep(20_000)
         ctrlUp.post(tap: .cgSessionEventTap)
+    }
+
+    static func postCommandV() {
+        let cmd: CGKeyCode = 55, v: CGKeyCode = 9
+        guard let src = CGEventSource(stateID: .combinedSessionState),
+              let cmdDown = CGEvent(keyboardEventSource: src, virtualKey: cmd, keyDown: true),
+              let down = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: false),
+              let cmdUp = CGEvent(keyboardEventSource: src, virtualKey: cmd, keyDown: false) else { return }
+        cmdDown.flags = .maskCommand
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        cmdUp.flags = []
+        cmdDown.post(tap: .cgSessionEventTap)
+        usleep(15_000)
+        down.post(tap: .cgSessionEventTap)
+        usleep(15_000)
+        up.post(tap: .cgSessionEventTap)
+        usleep(15_000)
+        cmdUp.post(tap: .cgSessionEventTap)
     }
 
     static func postControlArrow(right: Bool) {

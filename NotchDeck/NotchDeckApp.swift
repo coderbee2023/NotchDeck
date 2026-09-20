@@ -29,6 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.spaces.start()
         state.music.start()
         state.stats.start()
+        state.clipboard.start()
+        state.faceEvents.start(stats: state.stats)
+        state.lyrics.start(music: state.music, settings: state.settings)
+        state.weather.start(settings: state.settings)
+        state.glowSource.start(music: state.music)
+        state.focus.start()
+        if state.settings.focusIndicator { state.focus.requestAccessIfNeeded() }
+        SoundKit.enabled = { [weak state] in state?.settings.sounds ?? false }
+        state.menuProvider = { [weak self] in self?.statusItem.menu }
 
         if !OnboardingWindowController.hasCompleted {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.onboarding.show() }
@@ -106,7 +115,18 @@ final class DeckState: ObservableObject {
     let music = MusicController()
     let stats = SystemStats()
     let settings = DeckSettings()
-    static let pageCount = 4
+    let audio = AudioLevelMonitor()
+    let clipboard = ClipboardManager()
+    let timer = TimerManager()
+    let shelf = ShelfManager()
+    let faceEvents = FaceEvents()
+    let lyrics = LyricsController()
+    let weather = WeatherController()
+    let glowSource = GlowSource()
+    let focus = FocusMonitor()
+    @Published var chargePing = 0
+    var menuProvider: (() -> NSMenu?)?
+    static let pageCount = 7
 }
 
 enum Permissions {

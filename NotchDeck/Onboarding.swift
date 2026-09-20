@@ -1,13 +1,19 @@
 import AppKit
 import SwiftUI
 import Combine
+import CoreLocation
+import Intents
 
 final class PermissionStatus: ObservableObject {
     @Published var accessibility = false
     @Published var screenRecording = false
     @Published var automation: Bool? = nil
     @Published var hotkeys = false
+    @Published var location = false
+    @Published var focus = false
+    @Published var desktop = false
     private var timer: Timer?
+    private let locationManager = CLLocationManager()
 
     func start() {
         refresh()
@@ -22,6 +28,51 @@ final class PermissionStatus: ObservableObject {
         screenRecording = CGPreflightScreenCaptureAccess()
         hotkeys = DesktopHotkeys.allEnabled(count: 9)
         automation = PermissionStatus.automationState()
+        let loc = locationManager.authorizationStatus
+        location = (loc == .authorized || loc == .authorizedAlways)
+        focus = INFocusStatusCenter.default.authorizationStatus == .authorized
+        desktop = PermissionStatus.canReadDesktop()
+    }
+
+    /// The screenshot reaction watches the Desktop folder, which macOS gates behind TCC.
+    static func canReadDesktop() -> Bool {
+        let dir = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+        return (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) != nil
+    }
+
+    func requestLocation() {
+        let status = locationManager.authorizationStatus
+        if status == .notDetermined {
+            locationManager.requestWhenInUseAuthorization()
+        } else if status == .denied || status == .restricted {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices")!)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.refresh() }
+    }
+
+    func requestFocus() {
+        let status = INFocusStatusCenter.default.authorizationStatus
+        if status == .notDetermined {
+            INFocusStatusCenter.default.requestAuthorization { [weak self] _ in
+                DispatchQueue.main.async { self?.refresh() }
+            }
+        } else if status == .denied || status == .restricted {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Focus")!)
+        }
+    }
+
+    func requestDesktop() {
+        // Touching the folder is what makes macOS show the prompt.
+        if !PermissionStatus.canReadDesktop() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                guard let self else { return }
+                self.refresh()
+                if !self.desktop {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Files")!)
+                }
+            }
+        }
+        refresh()
     }
 
     static func automationState() -> Bool? {
@@ -139,7 +190,8 @@ struct OnboardingView: View {
                 .padding(.top, 34)
                 .padding(.bottom, 22)
 
-                VStack(spacing: 10) {
+                ScrollView(.vertical, showsIndicators: false) {
+                 VStack(spacing: 10) {
                     PermissionCard(symbol: "hand.raised.fill",
                                    title: "Accessibility",
                                    detail: "Lets NotchDeck press the Mission Control shortcuts that jump to a desktop.",
@@ -162,10 +214,38 @@ struct OnboardingView: View {
                                    granted: perms.hotkeys,
                                    buttonTitle: "Enable",
                                    action: { state.spaces.enableDirectHotkeys(); DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { perms.refresh() } })
+                    PermissionCard(symbol: "location.fill",
+                                   title: "Location",
+                                   detail: "Local weather in the System tab and on the face. Skip it and you can type a city instead.",
+                                   granted: perms.location,
+                                   optional: true,
+                                   action: { perms.requestLocation() })
+                    PermissionCard(symbol: "moon.fill",
+                                   title: "Focus status",
+                                   detail: "Shows a moon and rests the face's eyes while a Focus is on. macOS shares only on or off.",
+                                   granted: perms.focus,
+                                   optional: true,
+                                   action: { perms.requestFocus() })
+                    PermissionCard(symbol: "camera.viewfinder",
+                                   title: "Desktop folder",
+                                   detail: "Only so the face can wink when you take a screenshot. Nothing is read or uploaded.",
+                                   granted: perms.desktop,
+                                   optional: true,
+                                   action: { perms.requestDesktop() })
+                 }
+                 .padding(.horizontal, 28)
+                 .padding(.bottom, 4)
                 }
-                .padding(.horizontal, 28)
+                .frame(maxHeight: 430)
 
-                Spacer(minLength: 12)
+                Spacer(minLength: 10)
+
+                Text("Weather comes from open-meteo.com and lyrics from lrclib.net. Nothing else leaves your Mac.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.32))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 8)
 
                 HStack(spacing: 12) {
                     Button { settings.setLaunchAtLogin(!settings.launchAtLogin) } label: {
@@ -196,7 +276,7 @@ struct OnboardingView: View {
                 .padding(.bottom, 24)
             }
         }
-        .frame(width: 560, height: 620)
+        .frame(width: 560, height: 700)
         .onAppear { perms.start(); settings.refreshLaunchAtLogin() }
         .onDisappear { perms.stop() }
     }
@@ -211,6 +291,7 @@ struct PermissionCard: View {
     let detail: String
     let granted: Bool
     var pending: Bool = false
+    var optional: Bool = false
     var buttonTitle: String = "Allow"
     let action: () -> Void
     @State private var hovering = false
@@ -227,9 +308,19 @@ struct PermissionCard: View {
             .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                    if optional, !granted {
+                        Text("Optional")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .padding(.horizontal, 6)
+                            .frame(height: 15)
+                            .background(Capsule().fill(Color.white.opacity(0.08)))
+                    }
+                }
                 Text(detail)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.5))
