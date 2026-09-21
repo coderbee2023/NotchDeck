@@ -112,6 +112,38 @@
   var body = root.querySelector('.nd-body');
   var pillEl = root.querySelector('.nd-pill');
 
+  /* ---------- glow border as a notch-outline SVG path ---------- */
+  var glowwrap = deck.querySelector('.nd-glowwrap');
+  glowwrap.innerHTML = '<svg class="nd-svg" xmlns="http://www.w3.org/2000/svg"><path class="nd-gpath"></path></svg>';
+  var gsvg = glowwrap.querySelector('.nd-svg'), gpath = glowwrap.querySelector('.nd-gpath');
+  var lastGW = 0, lastGH = 0, glowBuilt = false;
+  function buildGlow(w, h, r, f, amp, t) {
+    var side = Math.max(0, h - f - r), arc = Math.PI / 2 * r, bottom = Math.max(0, w - 2 * r);
+    var total = side * 2 + arc * 2 + bottom, step = 3, pts = [];
+    for (var s = 0; s <= total; s += step) {
+      var x, y, nx, ny, a;
+      if (s < side) { x = 0; y = f + s; nx = -1; ny = 0; }
+      else if (s < side + arc) { a = (s - side) / r; x = r - r * Math.cos(a); y = (h - r) + r * Math.sin(a); nx = -Math.cos(a); ny = Math.sin(a); }
+      else if (s < side + arc + bottom) { x = r + (s - side - arc); y = h; nx = 0; ny = 1; }
+      else if (s < side + 2 * arc + bottom) { a = (s - side - arc - bottom) / r; x = (w - r) + r * Math.sin(a); y = (h - r) + r * Math.cos(a); nx = Math.sin(a); ny = Math.cos(a); }
+      else { x = w; y = (h - r) - (s - side - 2 * arc - bottom); nx = 1; ny = 0; }
+      if (amp > 0) { var edge = Math.min(1, Math.min(s, total - s) / 14); var wv = Math.sin(s / 38 * 2 * Math.PI - t * 5.5) * 0.6 + Math.sin(s / 17 * 2 * Math.PI + t * 8.1) * 0.4; var d = amp * wv * edge; x += nx * d; y += ny * d; }
+      pts.push(x.toFixed(1) + ' ' + y.toFixed(1));
+    }
+    return 'M ' + (-f) + ' 0 Q 0 0 ' + pts[0] + ' L ' + pts.slice(1).join(' L ') + ' Q ' + w + ' 0 ' + (w + f) + ' 0';
+  }
+  function updateGlow(t) {
+    var w = deck.clientWidth, h = deck.clientHeight;
+    if (!w || !h) return;
+    var wave = (!S.open && S.playing && S.glowOn) ? (2.6 + 2.2 * (0.5 + 0.5 * Math.sin(t * 3.1))) : 0;
+    if (wave <= 0 && glowBuilt && w === lastGW && h === lastGH) return;
+    if (w !== lastGW || h !== lastGH) { gsvg.setAttribute('width', w); gsvg.setAttribute('height', h); gsvg.setAttribute('viewBox', '0 0 ' + w + ' ' + h); lastGW = w; lastGH = h; }
+    var cs = getComputedStyle(deck), r = parseFloat(cs.getPropertyValue('--r')) || 12, f = parseFloat(cs.getPropertyValue('--f')) || 8;
+    gpath.setAttribute('d', buildGlow(w, h, r, f, wave, t));
+    glowBuilt = true;
+  }
+  (function glowLoop(now) { updateGlow((now || 0) / 1000); requestAnimationFrame(glowLoop); })(0);
+
   function hex2rgb(h) { var v = parseInt(h.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
   function lum(h) { var c = hex2rgb(h); return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255; }
   function hsl2hex(h, s, l) {

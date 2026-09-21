@@ -21,14 +21,16 @@
 .nd-menubar { position: absolute; top: 0; left: 0; right: 0; height: 32px; display: flex; align-items: center; padding: 0 16px; font-size: 13px; font-weight: 600; color: rgba(255,255,255,.9); gap: 18px; background: rgba(0,0,0,.18); backdrop-filter: blur(20px); }
 .nd-menubar span { font-weight: 500; opacity: .85; }
 .nd-menubar .r { margin-left: auto; font-weight: 500; font-variant-numeric: tabular-nums; }
-.nd-hot { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 240px; height: 40px; z-index: 5; cursor: pointer; }
+.nd-hot { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 230px; height: 48px; z-index: 5; cursor: pointer; }
 .nd-deck.open ~ .nd-hot { pointer-events: none; }
-.nd-deck.pill ~ .nd-hot { width: 420px; }
+.nd-deck.pill ~ .nd-hot { width: 430px; }
 
 /* ---------- deck ---------- */
-.nd-deck { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 200px; height: 32px; z-index: 6;
-  --r: 10px; --f: 6px; color: #fff; }
-.nd-deck.pill { width: 420px; height: 34px; --r: 14px; --f: 10px; }
+/* collapsed height matches the physical notch (~38px) so the closed pill has real presence */
+.nd-deck { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 210px; height: 38px; z-index: 6;
+  --r: 12px; --f: 8px; color: #fff; }
+.nd-deck.idle { width: 210px; height: 38px; }
+.nd-deck.pill { width: 430px; height: 46px; --r: 16px; --f: 10px; }
 .nd-deck.open { width: 720px; height: 350px; --r: 30px; --f: 20px; }
 .nd-deck, .nd-shape { transition: width .42s cubic-bezier(.22,1,.36,1), height .42s cubic-bezier(.22,1,.36,1), border-radius .42s cubic-bezier(.22,1,.36,1); }
 .nd-shape { position: absolute; inset: 0; border-radius: 0 0 var(--r) var(--r); background: linear-gradient(to bottom, #000 0, #000 25%, var(--nd-glass) 100%); overflow: hidden; }
@@ -41,31 +43,25 @@
 .nd-flare.r { left: 100%; --cx: 100%; }
 
 /* ---------- glow border ---------- */
-.nd-glowwrap { position: absolute; inset: 0; pointer-events: none; clip-path: inset(0 -50px -50px -50px); display: none; }
+.nd-glowwrap { position: absolute; inset: 0; pointer-events: none; clip-path: inset(0 -60px -60px -60px); display: none; }
 .nd-deck.glow .nd-glowwrap { display: block; }
-.nd-glowring { position: absolute; inset: 0; border-radius: 0 0 var(--r) var(--r); border: 1.4px solid var(--nd-glow); border-top: 0;
-  box-shadow: 0 0 6px var(--nd-glow), 0 0 16px var(--nd-glow), inset 0 0 5px var(--nd-glow);
-  animation: ndbreathe-o 2.6s ease-in-out infinite alternate; transition: border-radius .42s cubic-bezier(.22,1,.36,1); }
-.nd-glowring::before, .nd-glowring::after { content: ""; position: absolute; top: -1.4px; width: var(--f); height: var(--f); border: 1.4px solid var(--nd-glow); box-sizing: content-box; }
-.nd-glowring::before { right: calc(100% + 1.4px); border-radius: 0 0 var(--f) 0; border-color: transparent var(--nd-glow) var(--nd-glow) transparent; border-width: 0 1.4px 1.4px 0; }
-.nd-glowring::after { left: calc(100% + 1.4px); border-radius: 0 0 0 var(--f); border-color: transparent transparent var(--nd-glow) var(--nd-glow); border-width: 0 0 1.4px 1.4px; }
-@keyframes ndbreathe-o { from { opacity: .6; } to { opacity: 1; } }
-/* rainbow dynamic: hue-rotate the whole glow */
+/* the glow is a real notch-outline path — traces the concave flares cleanly and can wave to music */
+.nd-svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.nd-gpath { fill: none; stroke: var(--nd-glow); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 4px var(--nd-glow)) drop-shadow(0 0 11px var(--nd-glow));
+  animation: ndbreathe-o 2.6s ease-in-out infinite alternate; }
+@keyframes ndbreathe-o { from { opacity: .62; } to { opacity: 1; } }
 .nd-deck.dyn-rainbow .nd-glowwrap { animation: ndhue 6s linear infinite; }
 @keyframes ndhue { to { filter: hue-rotate(360deg); } }
-.nd-deck.dyn-pulse .nd-glowring { animation: ndpulse-o 1.4s ease-in-out infinite; }
-@keyframes ndpulse-o { 0%,100% { opacity: .45; } 50% { opacity: 1; } }
-.nd-deck.dyn-solid .nd-glowring { animation: none; opacity: 1; }
-/* charge beat: a bright arc that sweeps out from bottom-centre */
-.nd-charge { position: absolute; inset: 0; border-radius: 0 0 var(--r) var(--r); border: 2px solid transparent; border-bottom-color: #38e07b;
-  box-shadow: 0 0 10px #38e07b, 0 0 22px #38e07b; opacity: 0; clip-path: inset(60% 0 0 0); }
-.nd-deck.charging .nd-charge { animation: ndcharge 1.25s ease-out infinite; }
-@keyframes ndcharge { 0% { clip-path: inset(100% 42% 0 42%); opacity: 1; } 55% { clip-path: inset(0 0 0 0); opacity: 1; } 100% { clip-path: inset(0 0 0 0); opacity: 0; } }
+.nd-deck.dyn-pulse .nd-gpath { animation: ndpulse-o 1.4s ease-in-out infinite; }
+@keyframes ndpulse-o { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+.nd-deck.dyn-solid .nd-gpath { animation: none; opacity: 1; }
 
 /* ---------- collapsed face + pill ---------- */
-.nd-pill { position: absolute; inset: 0; display: none; align-items: center; padding: 0 16px 0 12px; gap: 10px; }
+.nd-pill { position: absolute; inset: 0; display: none; align-items: center; padding: 0 18px 0 14px; gap: 12px; }
 .nd-deck.pill .nd-pill, .nd-deck.idle .nd-pill { display: flex; }
-.nd-face { position: relative; width: 24px; height: 24px; flex: none; }
+.nd-deck.idle .nd-pill { justify-content: center; padding: 0; }
+.nd-face { position: relative; width: 27px; height: 27px; flex: none; }
 .nd-face .fc { position: absolute; inset: 0; border-radius: 50%; background: var(--nd-accent-22); box-shadow: inset 0 0 0 1.6px var(--nd-accent); }
 .nd-face .eye { position: absolute; top: 8px; width: 4px; height: 6px; border-radius: 50%; background: var(--nd-accent); }
 .nd-face .eye.l { left: 6px; } .nd-face .eye.r { right: 6px; }
