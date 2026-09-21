@@ -173,6 +173,14 @@
     background: linear-gradient(90deg, rgba(176,108,255,.18), rgba(91,140,255,.14)); width: fit-content; }
   .card .cardimg { margin: 18px -26px -26px; border-top: 1px solid var(--line); }
   .card .cardimg img { width: 100%; display: block; }
+  .card.flag { position: relative; }
+  .card.flag::before { content: ""; position: absolute; inset: 0; background: radial-gradient(90% 130% at 100% 0%, rgba(176,108,255,.14), transparent 55%); pointer-events: none; }
+  .card.flag .art img { object-position: center 30%; }
+  .card .quote { font-family: var(--display); font-size: 18px; font-weight: 600; color: var(--text); margin-top: 6px; line-height: 1.35; }
+  .card .quote span { display: block; font-family: var(--body); font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 5px; }
+  .card.wide { display: flex; flex-direction: column; }
+  .card.wide .body { display: grid; gap: 8px; }
+  .card.wide .cardimg { margin-top: 20px; }
   @media (max-width: 900px) {
     .card.wide, .card.tall, .card.half { grid-column: span 12; }
     .card.flag { grid-template-columns: 1fr; }
@@ -214,7 +222,11 @@
   footer a:hover { color: var(--text); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-  @media (prefers-reduced-motion: reduce) { * { animation: none !important; scroll-behavior: auto; } }
+  /* scroll reveal */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s cubic-bezier(.22,1,.36,1), transform .7s cubic-bezier(.22,1,.36,1); }
+  .reveal.in { opacity: 1; transform: none; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; scroll-behavior: auto; } .reveal { opacity: 1; transform: none; } }
 </style>
 </head>
 <body>
@@ -329,36 +341,38 @@
         <div class="body">
           <span class="badge-ai">✦ Apple Intelligence · on-device</span>
           <h3>A glow that reads the mood of your song</h3>
-          <p>NotchDeck asks the on-device model what a track <em>feels</em> like — melancholy, euphoric, menacing — and paints the border, a caption and the face to match. No servers, no account, no data leaving your Mac. Set the glow to <b>Mood</b> and the notch changes color with every song.</p>
-          <p class="muted" style="font-size:14px">“Love's shadow, silent and deep.” — written on-device for <em>Romantic Homicide</em>.</p>
+          <p>NotchDeck asks the on-device model what a track <em>feels</em> like — melancholy, euphoric, menacing — and paints the border, a caption and the face to match. No servers, no account, no data leaving your Mac. Set the glow to <b>Mood</b> and the notch re-tints with every song.</p>
+          <p class="quote">“Love's shadow, silent and deep.”<span> — written on-device for <em>Romantic Homicide</em></span></p>
         </div>
-        <div class="art"><img src="img/notch-live.jpg" alt="The collapsed notch with a face, weather badge, live lyrics and a rainbow glow that waves to the music" loading="lazy"></div>
+        <div class="art"><img src="img/music.jpg" alt="The Music page showing the AI-written mood caption and live lyrics" loading="lazy"></div>
       </div>
 
       <div class="card half">
         <div class="ic">☺</div>
         <h3>A living face</h3>
-        <p>A hand-drawn face lives in the notch and reacts to what's happening — vibing to music, sleepy at night, hot when the Mac runs warm, winking when you take a screenshot, alert when the camera's on.</p>
-        <div class="cardimg"><img src="img/notch-face.jpg" alt="The collapsed notch showing a calm face with a cloud weather badge and a glowing border" loading="lazy"></div>
+        <p>A hand-drawn face lives in the notch and reacts to what's happening — vibing to music, sleepy at night, hot when the Mac runs warm, winking when you screenshot, alert when the camera's on.</p>
       </div>
 
       <div class="card half">
         <div class="ic">🌦</div>
         <h3>Wears the weather</h3>
-        <p>Live local weather sits in the System page and as a tiny scene beside the face — a sun, drifting clouds, rain or a thunderstorm — read on-device and reconciled against the real sky so it never cries wolf.</p>
-        <div class="cardimg"><img src="img/settings.jpg" alt="Settings showing accent, the glow modes and dynamics, and face options" loading="lazy"></div>
+        <p>Live local weather in the System page and as a tiny scene beside the face — sun, drifting clouds, rain or a thunderstorm — reconciled against the real sky so it never cries wolf.</p>
       </div>
 
       <div class="card wide">
-        <div class="ic">✨</div>
-        <h3>A border, exactly your color</h3>
-        <p>The glowing border takes its color from your accent, a custom swatch, the album art, your wallpaper, or the song's mood — and moves the way you like: breathe, pulse, flow, comet, rainbow or solid. When music plays it can wave to the beat.</p>
+        <div class="body">
+          <div class="ic">✨</div>
+          <h3>A border, exactly your color</h3>
+          <p>The glowing border takes its color from your accent, a custom swatch, the album art, your wallpaper, or the song's mood — and moves the way you like: breathe, pulse, flow, comet, rainbow or solid. When music plays it waves to the beat.</p>
+        </div>
+        <div class="cardimg"><img src="img/settings.jpg" alt="Settings showing the glow modes, dynamics and face options" loading="lazy"></div>
       </div>
 
       <div class="card tall">
         <div class="ic">⚡</div>
         <h3>Charging, alive</h3>
         <p>Plug in and a bright surge is born at the bottom of the border and races out to both sides — a heartbeat of light — while a battery ring fills and the face grins.</p>
+        <p class="muted" style="font-size:13.5px">Everything animates at a buttery 30fps, then quiets down the moment the deck closes.</p>
       </div>
     </div>
   </section>
@@ -461,6 +475,17 @@
   const nav = document.getElementById('nav');
   const onScroll = () => nav.classList.toggle('stuck', window.scrollY > 8);
   onScroll(); window.addEventListener('scroll', onScroll, { passive: true });
+
+  // subtle reveal-on-scroll
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce && 'IntersectionObserver' in window) {
+    const targets = document.querySelectorAll('.feature, .card, .tile, .sec-head, .specs > div, details, .download');
+    targets.forEach((el, i) => { el.classList.add('reveal'); el.style.transitionDelay = ((i % 4) * 60) + 'ms'; });
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    targets.forEach(el => io.observe(el));
+  }
 </script>
 <script src="demo.js"></script>
 </body>
