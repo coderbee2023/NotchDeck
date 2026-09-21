@@ -46,14 +46,15 @@
 .nd-glowwrap { position: absolute; inset: 0; pointer-events: none; clip-path: inset(0 -60px -60px -60px); display: none; }
 .nd-deck.glow .nd-glowwrap { display: block; }
 /* the glow is a real notch-outline path — traces the concave flares cleanly and can wave to music */
-.nd-svg { position: absolute; left: 0; top: 0; overflow: visible; }
-.nd-gpath { fill: none; stroke: var(--nd-glow); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
-  filter: drop-shadow(0 0 4px var(--nd-glow)) drop-shadow(0 0 11px var(--nd-glow));
+.nd-svg { position: absolute; left: 0; top: 0; overflow: visible; width: auto; height: auto; fill: none; }
+.nd-gglow { fill: none; stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; filter: url(#ndblur); opacity: .85; }
+.nd-gpath { fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
   animation: ndbreathe-o 2.6s ease-in-out infinite alternate; }
-@keyframes ndbreathe-o { from { opacity: .62; } to { opacity: 1; } }
-.nd-deck.dyn-rainbow .nd-glowwrap { animation: ndhue 6s linear infinite; }
+@keyframes ndbreathe-o { from { opacity: .72; } to { opacity: 1; } }
+/* flow / rainbow: the whole multi-colour gradient drifts around the border */
+.nd-deck.dyn-rainbow .nd-glowwrap, .nd-deck.dyn-flow .nd-glowwrap { animation: ndhue 7s linear infinite; }
 @keyframes ndhue { to { filter: hue-rotate(360deg); } }
-.nd-deck.dyn-pulse .nd-gpath { animation: ndpulse-o 1.4s ease-in-out infinite; }
+.nd-deck.dyn-pulse .nd-gpath, .nd-deck.dyn-pulse .nd-gglow { animation: ndpulse-o 1.4s ease-in-out infinite; }
 @keyframes ndpulse-o { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
 .nd-deck.dyn-solid .nd-gpath { animation: none; opacity: 1; }
 

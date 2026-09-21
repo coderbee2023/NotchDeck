@@ -99,7 +99,7 @@
     open: false, pinned: false, page: 0, active: 3, playing: true, pos: 92, dur: 206, vol: 82, shuffle: false, repeat: 0,
     accent: '#4DA3FF', glass: 0.11, tint: 0, vis: true, volbar: true, login: false, hover: true, delay: 0,
     widgets: ['clock', 'weather', 'battery', 'cpu', 'memory', 'disk', 'network', 'thermal'],
-    glowOn: true, glowMode: 'mood', glowDyn: 'rainbow', glowHex: '', actions: true, sysvol: true, sysVolume: 0.5, muted: false, awake: false,
+    glowOn: true, glowMode: 'mood', glowDyn: 'flow', glowHex: '', actions: true, sysvol: true, sysVolume: 0.5, muted: false, awake: false,
     weatherFace: true, showFace: true, reactions: true,
     timerMin: 25, shelf: 4, clip: 5,
     cpu: 0.18, mem: 0.71, disk: 0.66, batt: 1.0, down: 1, up: 1
@@ -113,10 +113,21 @@
   var pillEl = root.querySelector('.nd-pill');
 
   /* ---------- glow border as a notch-outline SVG path ---------- */
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function svgEl(name, attrs) { var e = document.createElementNS(SVGNS, name); if (attrs) for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
   var glowwrap = deck.querySelector('.nd-glowwrap');
-  glowwrap.innerHTML = '<svg class="nd-svg" xmlns="http://www.w3.org/2000/svg"><path class="nd-gpath"></path></svg>';
-  var gsvg = glowwrap.querySelector('.nd-svg'), gpath = glowwrap.querySelector('.nd-gpath');
-  var lastGW = 0, lastGH = 0, glowBuilt = false;
+  glowwrap.innerHTML = '';
+  var gsvg = svgEl('svg', { 'class': 'nd-svg' });
+  var gdefs = svgEl('defs');
+  var ggrad = svgEl('linearGradient', { id: 'ndgrad', gradientUnits: 'userSpaceOnUse', x1: 0, y1: 0, x2: 200, y2: 0 });
+  [['0', '#ff4d7d'], ['0.22', '#ff8a3d'], ['0.44', '#3ddc84'], ['0.64', '#4da3ff'], ['0.84', '#9b6cff'], ['1', '#ff4d9d']].forEach(function (s) { ggrad.appendChild(svgEl('stop', { offset: s[0], 'stop-color': s[1] })); });
+  var gfilt = svgEl('filter', { id: 'ndblur', x: '-60%', y: '-60%', width: '220%', height: '220%' });
+  gfilt.appendChild(svgEl('feGaussianBlur', { stdDeviation: '3.2' }));
+  gdefs.appendChild(ggrad); gdefs.appendChild(gfilt);
+  var gglow = svgEl('path', { 'class': 'nd-gglow' }), gpath = svgEl('path', { 'class': 'nd-gpath' });
+  gsvg.appendChild(gdefs); gsvg.appendChild(gglow); gsvg.appendChild(gpath);
+  glowwrap.appendChild(gsvg);
+  var lastGW = 0, lastGH = 0, glowBuilt = false, lastStroke = '';
   function buildGlow(w, h, r, f, amp, t) {
     var side = Math.max(0, h - f - r), arc = Math.PI / 2 * r, bottom = Math.max(0, w - 2 * r);
     var total = side * 2 + arc * 2 + bottom, step = 3, pts = [];
@@ -136,10 +147,15 @@
     var w = deck.clientWidth, h = deck.clientHeight;
     if (!w || !h) return;
     var wave = (!S.open && S.playing && S.glowOn) ? (2.6 + 2.2 * (0.5 + 0.5 * Math.sin(t * 3.1))) : 0;
+    // flow / rainbow paint the spectrum gradient; every other mode is a single colour
+    var multi = (S.glowDyn === 'flow' || S.glowDyn === 'rainbow');
+    var stroke = multi ? 'url(#ndgrad)' : glowColor();
+    if (stroke !== lastStroke) { gpath.setAttribute('stroke', stroke); gglow.setAttribute('stroke', stroke); lastStroke = stroke; }
     if (wave <= 0 && glowBuilt && w === lastGW && h === lastGH) return;
-    if (w !== lastGW || h !== lastGH) { gsvg.setAttribute('width', w); gsvg.setAttribute('height', h); gsvg.setAttribute('viewBox', '0 0 ' + w + ' ' + h); lastGW = w; lastGH = h; }
+    if (w !== lastGW || h !== lastGH) { gsvg.setAttribute('width', w); gsvg.setAttribute('height', h); gsvg.setAttribute('viewBox', '0 0 ' + w + ' ' + h); ggrad.setAttribute('x2', w); lastGW = w; lastGH = h; }
     var cs = getComputedStyle(deck), r = parseFloat(cs.getPropertyValue('--r')) || 12, f = parseFloat(cs.getPropertyValue('--f')) || 8;
-    gpath.setAttribute('d', buildGlow(w, h, r, f, wave, t));
+    var d = buildGlow(w, h, r, f, wave, t);
+    gpath.setAttribute('d', d); gglow.setAttribute('d', d);
     glowBuilt = true;
   }
   (function glowLoop(now) { updateGlow((now || 0) / 1000); requestAnimationFrame(glowLoop); })(0);
@@ -465,7 +481,7 @@
     if (a === 'repeat') { S.repeat = (S.repeat + 1) % 3; renderBody(); }
     if (a === 'add5') { S.timerMin = Math.min(180, S.timerMin + 5); renderBody(); }
     if (a === 'clearshelf') { S.shelf = 0; renderBody(); }
-    if (a === 'reset') { S.glowOn = true; S.glowMode = 'mood'; S.glowDyn = 'rainbow'; S.glowHex = ''; S.accent = '#4DA3FF'; S.glass = 0.11; S.tint = 0; S.widgets = ['clock', 'weather', 'battery', 'cpu', 'memory', 'disk', 'network', 'thermal']; renderAll(); }
+    if (a === 'reset') { S.glowOn = true; S.glowMode = 'mood'; S.glowDyn = 'flow'; S.glowHex = ''; S.accent = '#4DA3FF'; S.glass = 0.11; S.tint = 0; S.widgets = ['clock', 'weather', 'battery', 'cpu', 'memory', 'disk', 'network', 'thermal']; renderAll(); }
   });
 
   /* ---------- sliders ---------- */
