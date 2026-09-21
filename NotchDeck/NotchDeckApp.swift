@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.lyrics.start(music: state.music, settings: state.settings)
         state.weather.start(settings: state.settings)
         state.glowSource.start(music: state.music)
+        state.songVibe.start(music: state.music, glow: state.glowSource, lyrics: state.lyrics)
         state.focus.start()
         if state.settings.focusIndicator { state.focus.requestAccessIfNeeded() }
         SoundKit.enabled = { [weak state] in state?.settings.sounds ?? false }
@@ -123,6 +124,7 @@ final class DeckState: ObservableObject {
     let lyrics = LyricsController()
     let weather = WeatherController()
     let glowSource = GlowSource()
+    let songVibe = SongVibeController()
     let focus = FocusMonitor()
     @Published var chargePing = 0
     var menuProvider: (() -> NSMenu?)?

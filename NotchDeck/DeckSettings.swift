@@ -75,6 +75,7 @@ final class DeckSettings: ObservableObject {
     @Published var glowHex: String { didSet { d.set(glowHex, forKey: "glowHex") } }
     @Published var waveWithMusic: Bool { didSet { d.set(waveWithMusic, forKey: "waveWithMusic") } }
     @Published var waveIntensity: Double { didSet { d.set(waveIntensity, forKey: "waveIntensity") } }
+    @Published var glowIntensity: Double { didSet { d.set(glowIntensity, forKey: "glowIntensity") } }
     @Published var showFace: Bool { didSet { d.set(showFace, forKey: "showFace") } }
     @Published var faceMode: String { didSet { d.set(faceMode, forKey: "faceMode") } }
     @Published var eventFaces: Bool { didSet { d.set(eventFaces, forKey: "eventFaces") } }
@@ -88,6 +89,7 @@ final class DeckSettings: ObservableObject {
     @Published var fahrenheit: Bool { didSet { d.set(fahrenheit, forKey: "fahrenheit") } }
     @Published var weatherFace: Bool { didSet { d.set(weatherFace, forKey: "weatherFace") } }
     @Published var glowMode: String { didSet { d.set(glowMode, forKey: "glowMode") } }
+    @Published var glowDynamic: String { didSet { d.set(glowDynamic, forKey: "glowDynamic") } }
     @Published var focusIndicator: Bool { didSet { d.set(focusIndicator, forKey: "focusIndicator") } }
     @Published var chargeAnimation: Bool { didSet { d.set(chargeAnimation, forKey: "chargeAnimation") } }
     @Published var sounds: Bool { didSet { d.set(sounds, forKey: "sounds") } }
@@ -111,6 +113,7 @@ final class DeckSettings: ObservableObject {
         glowHex = d.string(forKey: "glowHex") ?? ""
         waveWithMusic = d.object(forKey: "waveWithMusic") as? Bool ?? true
         waveIntensity = d.object(forKey: "waveIntensity") as? Double ?? 0.6
+        glowIntensity = d.object(forKey: "glowIntensity") as? Double ?? 0.6
         showFace = d.object(forKey: "showFace") as? Bool ?? true
         faceMode = d.string(forKey: "faceMode") ?? "auto"
         eventFaces = d.object(forKey: "eventFaces") as? Bool ?? true
@@ -124,6 +127,7 @@ final class DeckSettings: ObservableObject {
         fahrenheit = d.object(forKey: "fahrenheit") as? Bool ?? (Locale.current.measurementSystem == .us)
         weatherFace = d.object(forKey: "weatherFace") as? Bool ?? true
         glowMode = d.string(forKey: "glowMode") ?? (d.string(forKey: "glowHex").map { $0.isEmpty ? "accent" : "custom" } ?? "accent")
+        glowDynamic = d.string(forKey: "glowDynamic") ?? "breathe"
         focusIndicator = d.object(forKey: "focusIndicator") as? Bool ?? true
         chargeAnimation = d.object(forKey: "chargeAnimation") as? Bool ?? true
         sounds = d.object(forKey: "sounds") as? Bool ?? false
@@ -162,6 +166,7 @@ final class DeckSettings: ObservableObject {
     }
 
     var mode: GlowMode { GlowMode(rawValue: glowMode) ?? .accent }
+    var dynamic: GlowDynamic { GlowDynamic(rawValue: glowDynamic) ?? .breathe }
 
     /// The static part of the glow: dynamic modes are resolved against live art in DeckState.
     var glowColor: Color {
@@ -213,6 +218,7 @@ final class DeckSettings: ObservableObject {
         glowHex = ""
         waveWithMusic = true
         waveIntensity = 0.6
+        glowIntensity = 0.6
         showFace = true
         faceMode = "auto"
         eventFaces = true
@@ -223,6 +229,7 @@ final class DeckSettings: ObservableObject {
         weatherUseLocation = true
         weatherFace = true
         glowMode = "accent"
+        glowDynamic = "breathe"
         focusIndicator = true
         chargeAnimation = true
         sounds = false

@@ -203,7 +203,7 @@ final class NotchPanel: NSPanel {
         animationBehavior = .none
 
         let hosting = FirstMouseHostingView(rootView: AnyView(
-            DeckView(music: state.music, timer: state.timer, shelf: state.shelf, glow: state.glowSource, focus: state.focus, metrics: metrics)
+            DeckView(music: state.music, timer: state.timer, shelf: state.shelf, glow: state.glowSource, focus: state.focus, vibe: state.songVibe, metrics: metrics)
                 .environmentObject(state)
                 .environmentObject(state.settings)
                 .environmentObject(state.audio)

@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 
 enum GlowMode: String, CaseIterable, Identifiable {
-    case accent, custom, album, wallpaper
+    case accent, custom, album, wallpaper, mood
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum GlowMode: String, CaseIterable, Identifiable {
         case .custom: return "Custom"
         case .album: return "Album"
         case .wallpaper: return "Wallpaper"
+        case .mood: return "Mood"
         }
     }
 
@@ -22,14 +23,53 @@ enum GlowMode: String, CaseIterable, Identifiable {
         case .custom: return "circle.hexagongrid.fill"
         case .album: return "music.note"
         case .wallpaper: return "photo.fill"
+        case .mood: return "sparkles"
         }
     }
+}
+
+/// How the glow border is animated. `breathe`/`pulse`/`solid` use the single chosen colour;
+/// `flow` sweeps that colour and its neighbours around the border; `rainbow` is a full RGB
+/// spectrum flowing; `comet` runs a bright highlight around a dim base.
+enum GlowDynamic: String, CaseIterable, Identifiable {
+    case breathe, pulse, flow, rainbow, comet, solid
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .breathe: return "Breathe"
+        case .pulse: return "Pulse"
+        case .flow: return "Flow"
+        case .rainbow: return "Rainbow"
+        case .comet: return "Comet"
+        case .solid: return "Solid"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .breathe: return "wind"
+        case .pulse: return "waveform.path.ecg"
+        case .flow: return "water.waves"
+        case .rainbow: return "rainbow"
+        case .comet: return "sparkles"
+        case .solid: return "circle.fill"
+        }
+    }
+
+    /// Whether the border colour comes from the animation itself (rainbow) rather than the
+    /// chosen glow colour — used to gate the colour picker in settings.
+    var usesOwnColor: Bool { self == .rainbow }
 }
 
 /// Picks a glow color out of the current album art or desktop picture.
 final class GlowSource: ObservableObject {
     @Published private(set) var albumColor: Color?
     @Published private(set) var wallpaperColor: Color?
+    /// Colour of the current song's mood, set by SongVibeController from on-device Apple
+    /// Intelligence. Drives the `.mood` glow mode.
+    @Published var moodColor: Color?
 
     private var cancellables = Set<AnyCancellable>()
     private var wallpaperTimer: Timer?
@@ -62,6 +102,7 @@ final class GlowSource: ObservableObject {
         switch mode {
         case .album: return albumColor
         case .wallpaper: return wallpaperColor
+        case .mood: return moodColor
         default: return nil
         }
     }

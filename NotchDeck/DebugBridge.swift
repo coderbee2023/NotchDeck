@@ -110,6 +110,9 @@ final class DebugBridge {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.log("music player=\(self.state.music.activePlayer?.appName ?? "none") np=\(String(describing: self.state.music.nowPlaying)) err=\(self.state.music.lastError ?? "-")")
             }
+        case "vibe":
+            let v = state.songVibe
+            log("vibe modelReady=\(v.modelReady) mood=\(v.mood ?? "-") emoji=\(v.emoji ?? "-") energy=\(v.energy.map(String.init) ?? "-") color=\(v.color != nil) suggested=\(v.suggestedDynamic?.rawValue ?? "-") caption=\(v.caption ?? "-")")
         case "sh":
             let cmd = String(command.dropFirst(3))
             let outURL = logURL.deletingLastPathComponent().appendingPathComponent(".notchdeck-sh.out")

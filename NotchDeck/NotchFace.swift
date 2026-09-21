@@ -44,6 +44,7 @@ struct FaceView: View {
     @ObservedObject var timer: TimerManager
     @ObservedObject var weather: WeatherController
     @ObservedObject var focus: FocusMonitor
+    @ObservedObject var vibe: SongVibeController
     @EnvironmentObject var settings: DeckSettings
     var size: CGFloat = 24
 
@@ -53,6 +54,9 @@ struct FaceView: View {
         let base: FaceMood = settings.faceMode == "auto" ? FaceMood.auto(stats: stats, playing: playing, now: stats.now, focus: settings.focusIndicator && focus.isOn) : (FaceMood(rawValue: settings.faceMode) ?? .content)
         let timed: FaceMood = (timer.phase == .running && !playing) ? .focused : base
         let mood: FaceMood = (settings.eventFaces ? events.override : nil) ?? timed
+        // While a song plays, its read mood picks one of our ~60 catalogue faces, which takes
+        // over the whole expression (drawn natively, not an emoji).
+        let songFace: SongFace? = (playing && settings.faceMode == "auto") ? vibe.face : nil
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
             let t = tl.date.timeIntervalSinceReferenceDate
             let blinkPhase = t.truncatingRemainder(dividingBy: 4.2)
@@ -61,8 +65,14 @@ struct FaceView: View {
             let tilt: Double = mood == .vibing ? sin(t * 2 * .pi * 1.05) * (3 + 6 * audio.level) : (mood == .sleepy ? 8 : 0)
             let mouthOpen = CGFloat(0.5 + 0.5 * (sin(t * 2 * .pi * 2.1) * 0.5 + 0.5))
             ZStack {
-                FaceGlyph(mood: mood, blink: blink, mouthOpen: mouthOpen, color: settings.accent, size: size)
-                    .shadow(color: settings.accent.opacity(0.5), radius: 3)
+                Group {
+                    if let sf = songFace {
+                        LookGlyph(look: sf.look, blink: blink, mouthOpen: mouthOpen, t: t, color: settings.accent, size: size)
+                    } else {
+                        FaceGlyph(mood: mood, blink: blink, mouthOpen: mouthOpen, color: settings.accent, size: size)
+                    }
+                }
+                .shadow(color: settings.accent.opacity(0.5), radius: 3)
                 if let sky {
                     WeatherBadge(condition: sky, isDay: weather.isDay, t: t, size: size)
                         .offset(x: -size * 0.5, y: -size * 0.28)
@@ -134,7 +144,21 @@ struct FaceView: View {
             .rotationEffect(.degrees(tilt))
         }
         .frame(width: size + 10, height: size)
-        .help(mood.title)
+        .help(songFace?.title ?? mood.title)
+    }
+
+    /// Map the song's one/two-word mood onto a face expression. Returns nil for moods that don't
+    /// map cleanly, so the face keeps its normal auto expression.
+    static func faceMood(for mood: String?) -> FaceMood? {
+        guard let m = mood?.lowercased(), !m.isEmpty, m != "unknown" else { return nil }
+        func any(_ words: [String]) -> Bool { words.contains { m.contains($0) } }
+        if any(["euphoric", "hype", "party", "energetic", "dance", "exciting", "epic", "triumphant", "joyful"]) { return .vibing }
+        if any(["happy", "upbeat", "bright", "playful", "sunny", "cheerful", "fun", "groovy"]) { return .happy }
+        if any(["menacing", "dark", "angry", "aggressive", "tense", "ominous", "intense", "sinister", "furious"]) { return .watching }
+        if any(["sad", "melancholy", "somber", "lonely", "wistful", "blue", "heartbreak", "mournful", "nostalgic"]) { return .low }
+        if any(["sleepy", "dreamy", "ambient", "soft", "lullaby", "hazy", "drowsy", "ethereal"]) { return .sleepy }
+        if any(["calm", "chill", "mellow", "relaxed", "serene", "peaceful", "smooth", "gentle", "cozy"]) { return .content }
+        return nil
     }
 }
 

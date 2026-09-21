@@ -12,6 +12,7 @@ struct DeckView: View {
     @ObservedObject var shelf: ShelfManager
     @ObservedObject var glow: GlowSource
     @ObservedObject var focus: FocusMonitor
+    @ObservedObject var vibe: SongVibeController
     let metrics: NotchMetrics
 
     @State private var chargeBannerUntil: Date?
@@ -46,6 +47,65 @@ struct DeckView: View {
                             y: panel.height - height,
                             width: width,
                             height: height)
+    }
+
+    /// The glow border, coloured by POSITION around the outline so the whole palette shows at
+    /// once (like an RGB keyboard's rainbow across the keys) instead of one hue by centre-angle.
+    /// Multi-colour dynamics are drawn as many short trimmed segments, each its own colour;
+    /// single-colour dynamics stay one cheap stroke.
+    @ViewBuilder
+    private func borderOutline(_ dyn: GlowDynamic, base: Color, t: Double, flare: CGFloat, radius: CGFloat, amp: CGFloat, lineW: CGFloat) -> some View {
+        if dyn == .rainbow || dyn == .flow || dyn == .comet {
+            let n = 30
+            ZStack {
+                ForEach(0..<n, id: \.self) { i in
+                    let a = CGFloat(i) / CGFloat(n)
+                    let b = CGFloat(i + 1) / CGFloat(n)
+                    NotchWaveOutline(bottomRadius: radius, topFlare: flare, time: t, amplitude: amp)
+                        .trim(from: a, to: min(1, b + 0.03))
+                        .stroke(borderColor(dyn, base: base, pos: (Double(i) + 0.5) / Double(n), t: t),
+                                style: StrokeStyle(lineWidth: lineW, lineCap: .round, lineJoin: .round))
+                }
+            }
+        } else {
+            NotchWaveOutline(bottomRadius: radius, topFlare: flare, time: t, amplitude: amp)
+                .stroke(base, style: StrokeStyle(lineWidth: lineW, lineCap: .round, lineJoin: .round))
+        }
+    }
+
+    /// Colour at a point `pos` (0…1) around the border for a given dynamic. `rainbow` maps the
+    /// full spectrum around the loop and drifts it; `flow` waves the chosen colour's hue around;
+    /// `comet` keeps the chosen colour with a bright head that travels the loop.
+    private func borderColor(_ dyn: GlowDynamic, base: Color, pos: Double, t: Double) -> Color {
+        switch dyn {
+        case .rainbow:
+            let h = (pos + t * 0.14).truncatingRemainder(dividingBy: 1)
+            return Color(hue: h, saturation: 0.95, brightness: 1)
+        case .flow:
+            let ns = NSColor(base).usingColorSpace(.deviceRGB) ?? .white
+            let s = Double(max(0.6, ns.saturationComponent))
+            let b = Double(max(0.9, ns.brightnessComponent))
+            var h = Double(ns.hueComponent) + 0.18 * sin((pos + t * 0.12) * 2 * .pi)
+            h = h.truncatingRemainder(dividingBy: 1); if h < 0 { h += 1 }
+            return Color(hue: h, saturation: s, brightness: b)
+        case .comet:
+            let head = (t * 0.22).truncatingRemainder(dividingBy: 1)
+            var d = abs(pos - head); if d > 0.5 { d = 1 - d }
+            return DeckView.mix(base, .white, max(0, 1 - d / 0.13))
+        default:
+            return base
+        }
+    }
+
+    /// Linear RGB blend of two colours, `f` = 0 → a, 1 → b.
+    static func mix(_ a: Color, _ b: Color, _ f: Double) -> Color {
+        let na = NSColor(a).usingColorSpace(.deviceRGB) ?? .white
+        let nb = NSColor(b).usingColorSpace(.deviceRGB) ?? .white
+        let g = CGFloat(max(0, min(1, f)))
+        return Color(nsColor: NSColor(red: na.redComponent + (nb.redComponent - na.redComponent) * g,
+                                      green: na.greenComponent + (nb.greenComponent - na.greenComponent) * g,
+                                      blue: na.blueComponent + (nb.blueComponent - na.blueComponent) * g,
+                                      alpha: 1))
     }
 
     /// Words already sung are tinted the accent colour, the rest dimmed — a smooth per-line
@@ -136,6 +196,19 @@ struct DeckView: View {
                     let waving = pill && settings.waveWithMusic
                     let amp: CGFloat = waving ? CGFloat(settings.waveIntensity) * (1.2 + 4.5 * CGFloat(audio.level)) : 0
                     let radius: CGFloat = expanded ? 30 : (pill ? 14 : 10)
+                    // In Mood mode the song's energy picks the dynamic (calm→breathe, mid→flow,
+                    // high→comet); otherwise the user's chosen dynamic is used.
+                    let effDynamic: GlowDynamic = (settings.mode == .mood ? (vibe.suggestedDynamic ?? settings.dynamic) : settings.dynamic)
+                    let lineW: CGFloat = effDynamic == .pulse ? 1.2 + 0.9 * p : 1.2
+                    let glowAmt = settings.glowIntensity
+                    let bOpacity: Double = {
+                        switch effDynamic {
+                        case .breathe: return 0.55 + 0.45 * p
+                        case .pulse:   return 0.3 + 0.7 * p
+                        case .solid:   return 0.9
+                        default:       return 0.95
+                        }
+                    }()
                     ZStack {
                         if waving {
                             NotchWaveOutline(bottomRadius: radius, topFlare: flare, time: t, amplitude: amp, closed: true)
@@ -145,10 +218,15 @@ struct DeckView: View {
                                     .init(color: Color(white: settings.glass), location: 1)
                                 ], startPoint: .top, endPoint: .bottom))
                         }
-                        NotchWaveOutline(bottomRadius: radius, topFlare: flare, time: t, amplitude: amp)
-                            .stroke(c.opacity(0.55 + 0.45 * p), style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
-                            .shadow(color: c.opacity(0.85 * p + 0.1), radius: 5)
-                            .shadow(color: c.opacity(0.55 * p), radius: 14)
+                        // Glow = the SAME multi-colour border, just blurred, so the bloom always
+                        // matches the border exactly. Glow intensity only scales how far it spreads.
+                        if glowAmt > 0.01 {
+                            borderOutline(effDynamic, base: c, t: t, flare: flare, radius: radius, amp: amp, lineW: lineW + 1)
+                                .opacity(bOpacity * (0.5 + 0.3 * p) * min(1, 0.5 + glowAmt))
+                                .blur(radius: 4 + 11 * glowAmt)
+                        }
+                        borderOutline(effDynamic, base: c, t: t, flare: flare, radius: radius, amp: amp, lineW: lineW)
+                            .opacity(bOpacity)
                         if chargingNow {
                             NotchWaveOutline(bottomRadius: radius, topFlare: flare, time: t, amplitude: 0)
                                 .trim(from: 0, to: chargeRing)
@@ -176,7 +254,7 @@ struct DeckView: View {
             if pill || face {
                 HStack(spacing: 0) {
                     if face {
-                        FaceView(stats: state.stats, music: music, audio: audio, events: state.faceEvents, timer: state.timer, weather: state.weather, focus: focus, size: metrics.notchHeight - 8)
+                        FaceView(stats: state.stats, music: music, audio: audio, events: state.faceEvents, timer: state.timer, weather: state.weather, focus: focus, vibe: vibe, size: metrics.notchHeight - 8)
                             .padding(.leading, 12)
                             .help(state.weather.summary ?? "")
                     } else if pill {
@@ -211,7 +289,7 @@ struct DeckView: View {
                             if face {
                                 pillArtwork.frame(width: metrics.notchHeight - 10, height: metrics.notchHeight - 10)
                             }
-                            Visualizer(active: true, color: settings.accent, barCount: 5, maxHeight: metrics.notchHeight - 16)
+                            Visualizer(active: true, color: settings.accent, barCount: 5, maxHeight: metrics.notchHeight - 16, energy: Double(vibe.energy ?? 50) / 100)
                         }
                         .padding(.trailing, 14)
                     } else if timerRight {
@@ -377,7 +455,7 @@ struct DeckView: View {
                 SpacesPage(spaces: state.spaces, screen: metrics.screen)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
-                MusicPage(music: state.music, lyrics: state.lyrics)
+                MusicPage(music: state.music, lyrics: state.lyrics, vibe: state.songVibe)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
                 SystemPage(stats: state.stats)
@@ -848,6 +926,7 @@ struct SpaceCard: View {
 struct MusicPage: View {
     @ObservedObject var music: MusicController
     @ObservedObject var lyrics: LyricsController
+    @ObservedObject var vibe: SongVibeController
     @EnvironmentObject var settings: DeckSettings
     @State private var pulse = false
 
@@ -880,6 +959,24 @@ struct MusicPage: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.white.opacity(0.4))
                             .lineLimit(1)
+
+                        if let caption = vibe.caption, !caption.isEmpty {
+                            HStack(spacing: 6) {
+                                Text(caption)
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .italic()
+                                    .foregroundStyle((vibe.color ?? settings.accent).opacity(0.95))
+                                    .lineLimit(1)
+                                if let m = vibe.mood, !m.isEmpty, m != "unknown" {
+                                    Text("· \(m)")
+                                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.white.opacity(0.4))
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(.top, 3)
+                            .transition(.opacity)
+                        }
 
                         if settings.showLyrics {
                             LyricsStrip(lyrics: lyrics, accent: settings.accent)
@@ -1029,10 +1126,14 @@ struct Visualizer: View {
     var color: Color = .white
     var barCount: Int = 6
     var maxHeight: CGFloat = 16
+    /// Song energy 0…1 (from the mood read): faster and taller bars at higher energy.
+    var energy: Double = 0.5
 
     var body: some View {
+        // Period shrinks with energy (0.5→1.35s calm, 1→0.55s intense) so the bars beat faster.
+        let period = 1.35 - 0.8 * max(0, min(1, energy))
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !active)) { tl in
-            let phase = tl.date.timeIntervalSinceReferenceDate * (2 * .pi / 0.9)
+            let phase = tl.date.timeIntervalSinceReferenceDate * (2 * .pi / period)
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(0..<barCount, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1.5)
@@ -1047,7 +1148,8 @@ struct Visualizer: View {
     private func height(for i: Int, phase: Double) -> CGFloat {
         guard active else { return 3 }
         let v = sin(phase + Double(i) * 1.3) * 0.5 + 0.5
-        return 3 + CGFloat(v) * (maxHeight - 3)
+        let scale = 0.5 + 0.7 * max(0, min(1, energy))   // taller when energetic
+        return 3 + CGFloat(v) * (maxHeight - 3) * CGFloat(scale)
     }
 }
 
@@ -1827,6 +1929,18 @@ struct SettingsPage: View {
         case .custom: return "Pick a fixed color from the swatches."
         case .album: return "Glow takes its color from the album art that is playing."
         case .wallpaper: return "Glow takes its color from your desktop picture."
+        case .mood: return "Glow takes on the song's mood color, read on-device by Apple Intelligence."
+        }
+    }
+
+    private func glowDynamicHelp(_ d: GlowDynamic) -> String {
+        switch d {
+        case .breathe: return "The chosen color softly fades in and out."
+        case .pulse: return "A stronger, sharper heartbeat pulse in the chosen color."
+        case .flow: return "The chosen color and its neighbours flow around the border."
+        case .rainbow: return "A full RGB spectrum flows around the border (ignores the color)."
+        case .comet: return "A bright highlight races around a dim border in the chosen color."
+        case .solid: return "A steady, non-animated border in the chosen color."
         }
     }
 
@@ -1894,6 +2008,12 @@ struct SettingsPage: View {
                             .help(glowModeHelp(m))
                     }
                 }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 3), spacing: 5) {
+                    ForEach(GlowDynamic.allCases) { dyn in
+                        Chip(title: dyn.title, symbol: dyn.symbol, on: settings.dynamic == dyn) { settings.glowDynamic = dyn.rawValue }
+                            .help(glowDynamicHelp(dyn))
+                    }
+                }
                 HStack(spacing: 5) {
                     Button { settings.glowMode = "custom"; settings.glowHex = "" } label: {
                         ZStack {
@@ -1915,6 +2035,7 @@ struct SettingsPage: View {
                         .buttonStyle(.plain)
                     }
                 }
+                LabeledSlider(title: "Glow", icon: "sparkles", value: settings.glowIntensity) { settings.glowIntensity = $0 }
                 Chip(title: "Wave with music", symbol: "waveform.path", on: settings.waveWithMusic) { settings.waveWithMusic.toggle() }
                     .help("The border ripples with whatever is actually coming out of the speakers.")
                 LabeledSlider(title: "Wave", icon: "water.waves", value: settings.waveIntensity) { settings.waveIntensity = $0 }
